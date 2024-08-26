@@ -8,11 +8,14 @@
 #include <SparkFun_Ublox_Arduino_Library.h> //https://github.com/sparkfun/SparkFun_Ublox_Arduino_Library
 #include <Adafruit_BMP085.h>                //https://github.com/adafruit/Adafruit-BMP085-Library
 
-#define BattPin       A5
-#define GpsPwr        7
-#define PwDwPin       A3
-#define PowerHL       A4
-#define PttPin        3
+#define BattPin         A5
+#define GpsPwr          7
+#define PwDwPin         A3
+#define PowerHL         A4
+#define PttPin          3
+#define TC_PIN          A1
+#define AREF            1.65
+#define ADC_RESOLUTION  10
 
 //macros
 #define GpsON       digitalWrite(GpsPwr, LOW)
@@ -34,8 +37,8 @@ bool    alternateSymbolTable = false ; // false = '/' , true = '\'
 
 char Frequency[9] = "144.3900"; //default frequency. 144.3900 for US, 144.8000 for Europe
 
-char    comment[50] = "LightAPRS 2.0"; // Max 50 char but shorter is better
-char    StatusMessage[50] = "LightAPRS 2.0 by TA2NHP & TA2MUN";
+char    comment[50] = "Thompson HAB"; // Max 50 char but shorter is better
+char    StatusMessage[50] = "Take to the sky and fly!";
 //*****************************************************************************
 
 uint16_t  BeaconWait = 50;  // seconds sleep for next beacon (HF or VHF). This is optimized value, do not change this if possible.
@@ -54,7 +57,7 @@ NEVER use WIDE1-1 in an airborne path, since this can potentially trigger hundre
  */
 uint8_t pathSize = 2; // 2 for WIDE1-N,WIDE2-N ; 1 for WIDE2-N
 boolean autoPathSizeHighAlt = true; // force path to WIDE2-N only for high altitude (airborne) beaconing (over 1.000 meters (3.280 feet)) 
-boolean  aliveStatus = true; // for tx status message on first wake-up just once.
+boolean aliveStatus = true; // for tx status message on first wake-up just once.
 boolean radioSetup = false; // do not change this, temp value
 static char telemetry_buff[100]; // telemetry buffer
 uint16_t TxCount = 1; // increase +1 after every APRS transmission
@@ -295,7 +298,7 @@ void updateTelemetry() {
   telemetry_buff[21] = 'x';
   telemetry_buff[22] = 'C';
   telemetry_buff[23] = ' ';
-  float tempC = bmp.readTemperature();
+  float tempC = readTemperature();
   dtostrf(tempC, 6, 2, telemetry_buff + 24);
   telemetry_buff[30] = 'C';
   telemetry_buff[31] = ' ';
@@ -394,7 +397,7 @@ void gpsDebug() {
     SerialUSB.print(myGPS.getSecond());
     
     SerialUSB.print(" Temp: ");
-    SerialUSB.print(bmp.readTemperature());
+    SerialUSB.print(readTemperature());
     SerialUSB.print(" C");
     
     SerialUSB.print(" Press: ");    
@@ -433,10 +436,19 @@ float readBatt() {
     value += analogRead(BattPin);
     value += analogRead(BattPin);
     value = value / 3.0f;
-    value = (value * 1.65) / 1024.0f;
-    value = value / (R2/(R1+R2));
+    value = (value * AREF) / 1024.0f;
+    value = value / (R2 / (R1 + R2));
   } while (value > 20.0);
   return value;
+}
+
+float readTemperature() {
+  float value = analogRead(TC_PIN);
+  value += analogRead(TC_PIN);
+  value += analogRead(TC_PIN);
+  value = value / 3.0f;
+  value = value * (AREF / (pow(2, ADC_RESOLUTION) - 1));
+  return (value - 1.25) / 0.005;
 }
 
 void freeMem() {
