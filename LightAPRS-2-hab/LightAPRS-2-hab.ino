@@ -14,8 +14,7 @@
 #define PowerHL         A4
 #define PttPin          3
 #define TC_PIN          A1
-#define AREF            1.65
-#define ADC_RESOLUTION  10
+#define AREF            2.23f
 
 //macros
 #define GpsON       digitalWrite(GpsPwr, LOW)
@@ -25,7 +24,7 @@
 #define RadioON     digitalWrite(PwDwPin, HIGH)
 #define RadioOFF    digitalWrite(PwDwPin, LOW)
 #define RfHiPwr     digitalWrite(PowerHL, HIGH)
-#define RfLowPwr    digitalWrite(PowerHL, LOW)
+#define RfLowPwr    digitalWrite(PowerHL, LOW)    
 
 //#define DEVMODE // Development mode. Uncomment to enable for debugging.
 
@@ -37,8 +36,8 @@ bool    alternateSymbolTable = false ; // false = '/' , true = '\'
 
 char Frequency[9] = "144.3900"; //default frequency. 144.3900 for US, 144.8000 for Europe
 
-char    comment[50] = "Thompson HAB"; // Max 50 char but shorter is better
-char    StatusMessage[50] = "Take to the sky and fly!";
+char    comment[50] = "Take to the sky and fly!"; // Max 50 char but shorter is better
+char    StatusMessage[50] = "Thompson HAB";
 //*****************************************************************************
 
 uint16_t  BeaconWait = 50;  // seconds sleep for next beacon (HF or VHF). This is optimized value, do not change this if possible.
@@ -74,9 +73,7 @@ SFE_UBLOX_GPS myGPS;
 Adafruit_BMP085 bmp;
 
 void setup() {
-  // While the energy rises slowly with the solar panel, 
-  // using the analog reference low solves the analog measurement errors.
-  analogReference(AR_INTERNAL1V65);
+  analogReference(AR_INTERNAL);
   pinMode(PttPin, OUTPUT);
   pinMode(GpsPwr, OUTPUT);
   pinMode(BattPin, INPUT);
@@ -298,23 +295,27 @@ void updateTelemetry() {
   telemetry_buff[21] = 'x';
   telemetry_buff[22] = 'C';
   telemetry_buff[23] = ' ';
-  float tempC = readTemperature();
-  dtostrf(tempC, 6, 2, telemetry_buff + 24);
-  telemetry_buff[30] = 'C';
-  telemetry_buff[31] = ' ';
+  float internalTempC = bmp.readTemperature();
+  dtostrf(celsiusToFahrenheit(internalTempC), 6, 2, telemetry_buff + 24);
+  telemetry_buff[30] = 'F';
+  telemetry_buff[31] = '/';
+  float externalTempF = readExternalTemperature();
+  dtostrf(externalTempF, 6, 2, telemetry_buff + 32);
+  telemetry_buff[38] = 'F';
+  telemetry_buff[39] = ' ';
   float pressure = bmp.readPressure() / 100.0; // Pa to hPa
-  dtostrf(pressure, 7, 2, telemetry_buff + 32);
-  telemetry_buff[39] = 'h';
-  telemetry_buff[40] = 'P';
-  telemetry_buff[41] = 'a';
-  telemetry_buff[42] = ' ';
-  dtostrf(readBatt(), 5, 2, telemetry_buff + 43);
-  telemetry_buff[48] = 'V';
-  telemetry_buff[49] = ' ';
-  sprintf(telemetry_buff + 50, "%02d", (int)myGPS.getSIV()); // Returns number of sats used in fix
-  telemetry_buff[52] = 'S';
-  telemetry_buff[53] = ' ';
-  sprintf(telemetry_buff + 54, "%s", comment);
+  dtostrf(pressure, 7, 2, telemetry_buff + 40);
+  telemetry_buff[47] = 'h';
+  telemetry_buff[48] = 'P';
+  telemetry_buff[49] = 'a';
+  telemetry_buff[50] = ' ';
+  dtostrf(readBatt(), 5, 2, telemetry_buff + 51);
+  telemetry_buff[56] = 'V';
+  telemetry_buff[57] = ' ';
+  sprintf(telemetry_buff + 58, "%02d", (int)myGPS.getSIV()); // Returns number of sats used in fix
+  telemetry_buff[60] = 'S';
+  telemetry_buff[61] = ' ';
+  sprintf(telemetry_buff + 62, "%s", comment);
 
   #if defined(DEVMODE)
   SerialUSB.println(telemetry_buff);
@@ -395,10 +396,14 @@ void gpsDebug() {
     SerialUSB.print(myGPS.getMinute());
     SerialUSB.print(":");
     SerialUSB.print(myGPS.getSecond());
+
+    SerialUSB.print("Internal Temp: ");
+    SerialUSB.print(celsiusToFahrenheit(bmp.readTemperature()));
+    SerialUSB.print(" F");
     
-    SerialUSB.print(" Temp: ");
-    SerialUSB.print(readTemperature());
-    SerialUSB.print(" C");
+    SerialUSB.print("External Temp: ");
+    SerialUSB.print(readExternalTemperature());
+    SerialUSB.print(" F");
     
     SerialUSB.print(" Press: ");    
     SerialUSB.print(bmp.readPressure() / 100.0);
@@ -427,28 +432,24 @@ void setupUBloxDynamicModel() {
 } 
 
 float readBatt() {
-  float R1 = 560000.0; // 560K
-  float R2 = 100000.0; // 100K
+  float R1 = 560000.0f;
+  float R2 = 100000.0f;
   float value = 0.0f;
 
   do {    
     value = analogRead(BattPin);
-    value += analogRead(BattPin);
-    value += analogRead(BattPin);
-    value = value / 3.0f;
     value = (value * AREF) / 1024.0f;
     value = value / (R2 / (R1 + R2));
-  } while (value > 20.0);
+  } while (value > 20);
   return value;
 }
 
-float readTemperature() {
-  float value = analogRead(TC_PIN);
-  value += analogRead(TC_PIN);
-  value += analogRead(TC_PIN);
-  value = value / 3.0f;
-  value = value * (AREF / (pow(2, ADC_RESOLUTION) - 1));
-  return (value - 1.25) / 0.005;
+float readExternalTemperature() {
+  return 0.831f * analogRead(TC_PIN) - 434.382f;
+}
+
+float celsiusToFahrenheit(float c) {
+  return c * 1.8f + 32.0f;
 }
 
 void freeMem() {
